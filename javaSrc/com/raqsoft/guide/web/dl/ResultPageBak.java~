@@ -1,0 +1,989 @@
+package com.raqsoft.guide.web.dl;
+
+import java.io.OutputStream;
+import java.io.PrintWriter;
+import java.sql.Connection;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Vector;
+
+import javax.servlet.http.HttpSession;
+import javax.servlet.jsp.JspWriter;
+
+import com.datalogic.jdbc.DQLFieldsAttr;
+import com.datalogic.jdbc.FieldAttr;
+import com.raqsoft.guide.server.UserDataRows;
+import com.raqsoft.guide.server.UserInfo;
+import com.raqsoft.guide.web.DataSphereServlet;
+import com.raqsoft.cellset.datacalc.CalcCellSet;
+import com.raqsoft.common.ISessionFactory;
+import com.raqsoft.common.Logger;
+import com.raqsoft.dm.DataStruct;
+import com.raqsoft.dm.Env;
+import com.raqsoft.dm.Record;
+import com.raqsoft.dm.Table;
+import com.raqsoft.ide.gex.GMGex;
+import com.raqsoft.util.Variant;
+
+public class ResultPage3 {
+	public static boolean COUNT_TOTAL_FIRST = false;
+	public static int CACHE_NUM = 5;//���漸ҳ
+	
+	private ResultSet rs;
+	private DQLFieldsAttr dqlfa;
+	private String lglSql, sql;
+	private int pageCount = 50;//ÿҳ����
+	private int currPage = 0;//��ǰҳ��
+	private List columns = new ArrayList();
+	private String attrs;
+	private List editStyles = new ArrayList();
+	private List types = new ArrayList();
+	private boolean reachEnd = false;
+	private ISessionFactory isf;
+	private boolean title;
+	private String dbName;
+	private Statement stmt;
+	public ResultPage3(String dbName, String lglSql, String attrs, boolean title) throws SQLException{
+		this.title = title;
+		this.lglSql = lglSql;
+		this.attrs = attrs;
+		Logger.debug("Logic Sql:[" + lglSql + "]");
+		this.dbName = dbName;
+	}
+	public ResultPage3() {}
+
+	public void init() throws SQLException {
+		try {
+			isf = (ISessionFactory)Env.getDBSessionFactory(dbName);
+			this.rs = doQuery();
+			cache = new ArrayList();
+			ResultSet set = stmt.executeQuery("result " + lglSql);
+			String str = null;
+			while (set.next()) {
+				str = set.getString(1);
+			}
+			set.close();
+			dqlfa = new DQLFieldsAttr(str, stmt.getConnection());
+//			Logger.debug(dqlfa.toString());
+			java.sql.ResultSetMetaData rsmd = rs.getMetaData();
+			int count = rsmd.getColumnCount();
+			for (int i=1; i<=count; i++) {
+				columns.add(rsmd.getColumnLabel(i));
+				FieldAttr fa = dqlfa.getFieldAttr(i);
+				if (fa == null) { 
+					fa = new FieldAttr();
+					dqlfa.setFieldAttr(i, fa);
+				}
+				fa.setName(rsmd.getColumnLabel(i));
+			}
+			dqlfa.mergeAttr(attrs);
+//			Logger.debug(dqlfa.toString());
+		} catch (Exception e) {
+			e.printStackTrace();
+			throw new SQLException(e.getMessage());
+		}
+	}
+
+	private ResultSet doQuery() throws Exception {
+		//�ȹرվɵ�
+		Statement stat1 = null;
+		try {
+			stat1 = xlsxRs.getStatement();
+		} catch (Exception e) {}
+		Connection con1 = null;
+		try {
+			con1 = stat1.getConnection();
+		} catch (Exception e) {}
+		try {
+			xlsxRs.close();
+		} catch (Exception e) {}
+		try {
+			stat1.close();
+		} catch (Exception e) {}
+		try {
+			con1.close();
+		} catch (Exception e) {}
+		
+		Logger.debug("do new query!");
+		
+		Connection con = (Connection)isf.getSession().getSession();
+		stmt = con.createStatement(COUNT_TOTAL_FIRST ? ResultSet.TYPE_SCROLL_INSENSITIVE : ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
+		//Thread.currentThread().sleep(10*1000);
+		ResultSet rs = stmt.executeQuery(lglSql);
+		
+		//stmt.cancel();
+		if (rs == null) throw new SQLException("ResultSet is null");
+		return rs;
+	}
+
+	public void continueQuery( String sql ) throws Exception {
+		try{ rs.close(); }catch( Throwable t ) {}
+		this.rs = stmt.executeQuery( sql );
+		this.lglSql = sql;
+		java.sql.ResultSetMetaData rsmd = rs.getMetaData();
+		int count = rsmd.getColumnCount();
+
+		ResultSet set = stmt.executeQuery("result " + lglSql);
+		String str = null;
+		while (set.next()) {
+			str = set.getString(1);
+		}
+		set.close();
+		dqlfa = new DQLFieldsAttr(str, stmt.getConnection());
+
+		columns = new ArrayList();
+		for (int i=1; i<=count; i++) {
+			columns.add(rsmd.getColumnLabel(i));
+			FieldAttr fa = dqlfa.getFieldAttr(i);
+			if (fa == null) { 
+				fa = new FieldAttr();
+				dqlfa.setFieldAttr(i, fa);
+			}
+			fa.setName(rsmd.getColumnLabel(i));
+		}
+		cache = new ArrayList();
+	}
+
+	public ResultSet getResultSet() {
+		return rs;
+	}
+
+	public void cancel() throws SQLException {
+		stmt.cancel();
+	}
+	
+	public String status = "�������������......";
+	public String status() {
+		return status;
+	}
+
+//	private ResultSet doQuery() throws Exception {
+//		Connection con = (Connection)(isf.getSession().getSession());
+//		ResultSet rs = con.createStatement(ResultSet.TYPE_SCROLL_INSENSITIVE, ResultSet.CONCUR_READ_ONLY).executeQuery(sql);
+//		if (rs == null) throw new SQLException("ResultSet is null");
+//		return rs;
+//	}
+	private void generateHeader(JspWriter pw) throws Exception {
+		if (title) {
+			int count = columns.size();
+			int tw = 0;
+			for (int i=0; i<count; i++) {
+				tw += dqlfa.getFieldAttr(i+1).getWidth();
+			}
+			pw.print("<style>.resultTableClass td{border:1px solid #BFC2C6;overflow:hidden;}</style><table class='resultTableClass' style='border-collapse:collapse;font-size:12px;table-layout:fixed;width:" + tw + "px;'><tr id='titleTr'>");
+			for (int i=0; i<count; i++) {
+				FieldAttr fa = dqlfa.getFieldAttr(i+1);
+				String useDisp = "";
+				if (fa.getSql() != null && fa.getSql().length() > 0) useDisp = " useDisp=" + (fa.isUseDisp()?"1":"0");
+				pw.print("<th format='" + fa.getFormat() + "'" + useDisp + " style='border:1px solid #BFC2C6;width:" + fa.getWidth() + "px'>" + columns.get(i) + "</th>");
+			}
+			pw.print("</tr>");
+		}
+	}
+	
+	private int maxCache = 0;//��ѯ����
+	private List getRow(int i, ResultSet rs) throws Exception {
+		List row = new ArrayList();
+		int count = columns.size();
+		//Logger.debug(i + "---" + maxCache);
+		if (maxCache > i && i > maxCache-this.pageCount * CACHE_NUM - 1) {
+			row = (List)cache.get(cache.size()-(maxCache-i));
+		} else if (maxCache == i) {
+			if (!rs.next()) return null;
+			for (int k=1; k<=count; k++) {
+				Object o = rs.getObject(k);
+				row.add(o);
+			}
+			cache.add(row);
+			maxCache++;
+		}
+		if (cache.size() > CACHE_NUM * pageCount + 1) cache.remove(0);
+		if (row.size() == 0) return null;
+		return row;
+	}
+
+	
+	
+//	private boolean getRow(int i, JspWriter pw, ResultSet rs) throws Exception {
+//		List row = new ArrayList();
+//		int count = columns.size();
+//		if (cache.size() > i) {
+//			row = (List)cache.get(i);
+//		} else if (cache.size() == i) {
+//			if (!rs.next()) return true;
+//			for (int k=1; k<=count; k++) {
+//				Object o = rs.getObject(k);
+//				row.add(o);
+//			}
+//			cache.add(row);
+//		}
+//		pw.print("<tr>");
+//		for (int k=1; k<=count; k++) {
+//			FieldAttr fa = dqlfa.getFieldAttr(k);
+//			if (fa == null) fa = new FieldAttr();
+//			String str = ConfigUtil.format(getDispValue(row.get(k-1), fa), fa.getFormat());
+//			pw.print("<td>" + str + "</td>");
+//		}
+//		pw.print("</tr>");
+//		return false;
+//	}
+
+	private Object getDispValue(Object v, FieldAttr fa) {
+		if (v == null) return null;
+		if (fa == null || !fa.isUseDisp()) return v;
+		Map dt = fa.getDispTable();
+		if (dt == null) return v;
+		Object disp = dt.get(v.toString());
+		if (disp == null) return v;
+		else return disp;
+	}
+	
+	private List cache = null;
+
+	public void prev(JspWriter pw, String attrs) throws Exception {
+		status = "��ʼ��ѯ���......";
+		dqlfa.mergeAttr(attrs);
+		try {
+			if (currPage == 1) {
+				pw.print("error:�Ѿ�����ǰҳ");
+				status = "error:�Ѿ�����ǰҳ";
+				return;
+			}
+			reachEnd = false;
+			currPage--;
+			if (title) generateHeader(pw); 
+			for (int i=(currPage-1) * pageCount; i<currPage * pageCount; i++) {
+				if (i%1000 == 0) status = "���?��" + i + "�����";
+				List row = getRow(i, rs);
+				if (row == null) {
+					currPage++;
+					pw.print("error:�Ѿ�����ǰҳ");
+					status = "error:�Ѿ�����ǰҳ";
+					return;
+				}
+				reachEnd = (row == null);
+				if (reachEnd) break;
+				pw.print("<tr>");
+				for (int k=1; k<=row.size(); k++) {
+					FieldAttr fa = dqlfa.getFieldAttr(k);
+					if (fa == null) fa = new FieldAttr();
+					String str = ConfigUtil.format(getDispValue(row.get(k-1), fa), fa.getFormat());
+					pw.print("<td>" + str + "</td>");
+				}
+				pw.print("</tr>");
+			}
+			if (title) pw.print("</table>");
+			pw.print("<input type='hidden' id='pageNum' value='" + currPage + "'><input type='hidden' id='reachEnd' value='" + (reachEnd?"1":"0") + "'>");
+			status = "success";
+		} catch (SQLException e) {
+			e.printStackTrace();
+			status = "error:" + e.getMessage();
+			pw.print(status);
+		}
+	}
+
+	public void refresh(JspWriter pw, String attrs) throws Exception {
+		status = "��ʼ��ѯ���......";
+		dqlfa.mergeAttr(attrs);
+		try {
+			if (title) generateHeader(pw); 
+			for (int i=(currPage-1) * pageCount; i<currPage * pageCount; i++) {
+				if (i%1000 == 0) status = "���?��" + i + "�����";
+				List row = getRow(i, rs);
+				reachEnd = (row == null);
+				if (reachEnd) break;
+				pw.print("<tr>");
+				for (int k=1; k<=row.size(); k++) {
+					FieldAttr fa = dqlfa.getFieldAttr(k);
+					if (fa == null) fa = new FieldAttr();
+					String str = ConfigUtil.format(getDispValue(row.get(k-1), fa), fa.getFormat());
+					pw.print("<td>" + str + "</td>");
+				}
+				pw.print("</tr>");
+			}
+			if (!reachEnd) reachEnd = (getRow(currPage * pageCount, rs) == null);//��ȡһ����֤�ǲ��ǵ������ҳ��
+			if (title) pw.print("</table>");
+			pw.print("<input type='hidden' id='pageNum' value='" + currPage + "'><input type='hidden' id='reachEnd' value='" + (reachEnd?"1":"0") + "'>");
+			status = "success";
+		} catch (SQLException e) {
+			e.printStackTrace();
+			status = "error:" + e.getMessage();
+			pw.print(status);
+		}
+	}
+	
+	public void next(JspWriter pw, String attrs) throws Exception {
+		status = "��ʼ��ѯ���......";
+		dqlfa.mergeAttr(attrs);
+		try {
+			//Logger.debug("--" + reachEnd);
+			if (reachEnd) {
+				pw.print("error:�Ѿ��ﵽ���ҳ");
+				status = "error:�Ѿ��ﵽ���ҳ";
+				return;
+			}
+			currPage++;
+			if (title) generateHeader(pw); 
+			for (int i=(currPage-1) * pageCount; i<currPage * pageCount; i++) {
+				if (i%1000 == 0) status = "���?��" + i + "�����";
+				List row = getRow(i, rs);
+				reachEnd = (row == null);
+				if (reachEnd) break;
+				pw.print("<tr>");
+				for (int k=1; k<=row.size(); k++) {
+					FieldAttr fa = dqlfa.getFieldAttr(k);
+					if (fa == null) fa = new FieldAttr();
+					String str = ConfigUtil.format(getDispValue(row.get(k-1), fa), fa.getFormat());
+					pw.print("<td>" + str + "</td>");
+				}
+				pw.print("</tr>");
+			}
+			if (!reachEnd) reachEnd = (getRow(currPage * pageCount, rs) == null);//��ȡһ����֤�ǲ��ǵ������ҳ��
+			if (title) pw.print("</table>"); 
+			pw.print("<input type='hidden' id='pageNum' value='" + currPage + "'><input type='hidden' id='reachEnd' value='" + (reachEnd?"1":"0") + "'>");
+			status = "success";
+		} catch (SQLException e) {
+			e.printStackTrace();
+			status = "error:" + e.getMessage();
+			pw.print(status);
+		}
+	}
+	public void txt(HttpSession session, PrintWriter pw) throws Exception {
+		status = "��ʼ��ѯ���......";
+		//StringBuffer sb = new StringBuffer();
+		Object user = session.getAttribute( "datasphere_username" );
+		if (user == null) throw new Exception("need user login!");
+		UserInfo ui = DataSphereServlet.userManager.getUserInfo(user.toString());
+		UserDataRows edr = ui.getExportDataRows();
+		Logger.debug("export max row = " + ui.getExportMaxRowsPerTime());
+		long perTime = ui.getExportMaxRowsPerTime();
+		long perDay = ui.getExportMaxRowsPerDay();
+		long perMonth = ui.getExportMaxRowsPerMonth();
+		long max = Integer.MAX_VALUE;
+		if (perTime > 0) {
+			max = perTime;
+		}
+		if (perDay > 0) {
+			long dayLeft = perDay - edr.getDayRows();
+			if (dayLeft <= 0) throw new Exception("Exceed everyday's max row count");
+			if (max > dayLeft) max = dayLeft;
+		}
+		if (perMonth > 0) {
+			long monthLeft = perMonth - edr.getMonthRows();
+			if (monthLeft <= 0) throw new Exception("Exceed per month's max row count");
+			if (max > monthLeft) max = monthLeft;
+		}
+		if (currPage > CACHE_NUM) {
+			maxCache = 0;
+			this.rs = doQuery();			
+		}
+		ResultSet rs = this.rs;
+		
+		int rowCount = 0;
+//		try {
+//			rs.last();
+//			rowCount = rs.getRow();
+//			rs.beforeFirst();
+//		} catch (SQLException e) {
+//		}
+//		Logger.debug("data row = " + rowCount);
+//		if (perTime > 0 && rowCount > perTime) throw new Exception("Result Set too large!");
+//		if (perDay > 0 && edr.getDayRows() + rowCount > perDay) throw new Exception("Exceed everyday's max row count");
+//		if (perMonth > 0 && edr.getMonthRows() + rowCount > perMonth) throw new Exception("Exceed per month's max row count");
+		for (int i=0; i<columns.size(); i++) {
+			pw.print(columns.get(i).toString() + "\t");
+		}
+		pw.print("\r\n");
+		boolean over = true;
+		for (int i=0; i<Integer.MAX_VALUE; i++) {
+			List row = getRow(i, rs);
+			if (row == null || row.size() != columns.size()) {
+				reachEnd = true;
+				break;
+			}
+			this.currPage = i / pageCount + 1;
+			if (max == 0) {
+				over = false;
+				status = "info:����Ȩ��ʹ���꣬���δ��ȫ����";
+				break;
+			}
+			if (rowCount%1000 == 0) status = "���?��" + rowCount + "�����";
+			for (int j=0; j<this.columns.size(); j++) {
+				FieldAttr fa = dqlfa.getFieldAttr(j+1);
+				if (fa == null) fa = new FieldAttr();
+				pw.print(ConfigUtil.format(getDispValue(row.get(j), fa), fa.getFormat()) + "\t");
+			}
+			pw.print("\r\n");
+			rowCount++;
+			max--;
+		}
+
+//		Statement stat = null;
+//		try {
+//			stat = rs.getStatement();
+//		} catch (Exception e) {}
+//		Connection con = null;
+//		try {
+//			con = stat.getConnection();
+//		} catch (Exception e) {}
+//		try {
+//			rs.close();
+//		} catch (Exception e) {}
+//		try {
+//			stat.close();
+//		} catch (Exception e) {}
+//		try {
+//			con.close();
+//		} catch (Exception e) {}
+//		edr.add(rowCount);
+		
+		ui.writeExportDataRows(edr);
+		if (over) status = "success";
+		//return sb.toString();
+	}
+	private UserDataRows edr;
+	private Table gexQuery(UserInfo ui) throws Exception {
+		status = "��ʼ��ѯ���......";
+		int maxCalc = ui.getCalcMaxRows();
+		long perTime = ui.getExportMaxRowsPerTime();
+		long perDay = ui.getExportMaxRowsPerDay();
+		long perMonth = ui.getExportMaxRowsPerMonth();
+		edr = ui.getExportDataRows();
+		long max = Integer.MAX_VALUE;
+		if (perTime > 0) {
+			max = perTime;
+		}
+		if (maxCalc > 0 && max > maxCalc) {
+			max = maxCalc;
+		}
+		if (perDay > 0) {
+			long dayLeft = perDay - edr.getDayRows();
+			if (dayLeft <= 0) throw new Exception("Exceed everyday's max row count");
+			if (max > dayLeft) max = dayLeft;
+		}
+		if (perMonth > 0) {
+			long monthLeft = perMonth - edr.getMonthRows();
+			if (monthLeft <= 0) throw new Exception("Exceed per month's max row count");
+			if (max > monthLeft) max = monthLeft;
+		}
+		if (max > DataSphereServlet.maxExportRow) max = DataSphereServlet.maxExportRow;
+
+		if (currPage > CACHE_NUM) {
+			maxCache = 0;
+			this.rs = doQuery();			
+		}
+		ResultSet rs = this.rs;
+		
+		int rowCount = 0;
+//		try {
+//			rs.last();
+//			rowCount = rs.getRow();
+//			rs.beforeFirst();
+//		} catch (SQLException e) {
+//		}
+//		Logger.debug("data row = " + rowCount);
+//		if (perTime > 0 && perTime < rowCount) throw new Exception("Result Set too large!");
+//		if (maxCalc > 0 && maxCalc < rowCount) throw new Exception("Result Set too large!");
+//		if (perDay > 0 && edr.getDayRows() + rowCount > perDay) throw new Exception("Exceed everyday's max row count");
+//		if (perMonth > 0 && edr.getMonthRows() + rowCount > perMonth) throw new Exception("Exceed per month's max row count");
+
+		String[] cs = new String[columns.size()];
+		for (int i=0; i<columns.size(); i++) {
+			cs[i] = columns.get(i).toString();
+		}
+		DataStruct ds = new DataStruct(cs);
+		Table t = new Table(ds);
+		gexOver = true;
+		for (int i=0; i<Integer.MAX_VALUE; i++) {
+			List row = getRow(i, rs);
+			if (row == null || row.size() != columns.size()) {
+				reachEnd = true;
+				break;
+			}
+			this.currPage = i / pageCount + 1;
+			if (max == 0) {
+				gexOver = false;
+				status = "info:����Ȩ��ʹ���꣬���δ��ȫ����";
+				break;
+			}
+			if (rowCount%1000 == 0) status = "���?��" + rowCount + "�����";
+			Record r = t.newLast();
+			for (int j=0; j<this.columns.size(); j++) {
+				r.set(j, row.get(j));
+			}
+			max--;
+			rowCount++;
+		}
+//		Statement stat = null;
+//		try {
+//			stat = rs.getStatement();
+//		} catch (Exception e) {}
+//		Connection con = null;
+//		try {
+//			con = stat.getConnection();
+//		} catch (Exception e) {}
+//		try {
+//			rs.close();
+//		} catch (Exception e) {}
+//		try {
+//			stat.close();
+//		} catch (Exception e) {}
+//		try {
+//			con.close();
+//		} catch (Exception e) {}
+		return t;
+	}
+	private boolean gexOver = true;
+	public CalcCellSet gex(HttpSession session) throws Exception {
+		Object user = session.getAttribute( "datasphere_username" );
+		if (user == null) throw new Exception("need user login!");
+		UserInfo ui = DataSphereServlet.userManager.getUserInfo(user.toString());
+		Table t = gexQuery(ui);
+		String[] colNames = t.dataStruct().getAllFieldNames();
+		CalcCellSet ccs = GMGex.table2Gex(t, colNames);
+		int colCount = ccs.getColCount();
+		int rowCount = ccs.getRowCount();
+		Map codeTableMap = new HashMap();
+		Vector usedNames = new Vector();
+		for (int c = 1; c <= colCount; c++) {
+			FieldAttr fa = dqlfa.getFieldAttr(c);
+			if (fa == null) fa = new FieldAttr();
+			if (fa.getFormat() != null && fa.getFormat().trim().length()>0) {
+				ccs.getCalcCell(2, c).setFormat(fa.getFormat().trim());
+			}
+			ccs.getColCell(c).setWidth(fa.getWidth());
+			Map dt = fa.getDispTable();
+			if (fa.isUseDisp() && dt!=null && dt.size()>0) {
+				Table table = new Table( new String[] { "code", "disp" });
+				Iterator iter = dt.keySet().iterator();
+				while (iter.hasNext()) {
+					Object v = iter.next();
+					table.newLast(new Object[] { Variant.parse(v.toString()), dt.get(v) });
+				}
+
+				int index = 1;
+				while (usedNames.contains("table" + index)) {
+					index++;
+				}
+
+				usedNames.add("table" + index);
+				codeTableMap.put("table" + index,
+						table);
+				ccs.getCalcCell(2, c).setCodeTable("table" + index);
+			}
+		}
+		if (!codeTableMap.isEmpty()) {
+			ccs.setCodeTableMap(codeTableMap);
+		}
+		edr.add(t.count());
+		ui.writeExportDataRows(edr);
+		if (gexOver) status = "success";
+
+		return ccs;
+	}
+
+	private ResultSet xlsxRs = null;
+	private boolean b2007 = false;
+	public boolean xlsxQyery(HttpSession session) throws Exception {
+		xlsxRs = doQuery();
+		b2007 = false;
+		Object user = session.getAttribute( "datasphere_username" );
+		if (user == null) throw new Exception("need user login!");
+		UserInfo ui = DataSphereServlet.userManager.getUserInfo(user.toString());
+		Logger.debug("export max row = " + ui.getExportMaxRowsPerTime());
+		long perTime = ui.getExportMaxRowsPerTime();
+		long perDay = ui.getExportMaxRowsPerDay();
+		long perMonth = ui.getExportMaxRowsPerMonth();
+		edr = ui.getExportDataRows();
+		int rowCount = 0;
+		try {
+			xlsxRs.last();
+			rowCount = xlsxRs.getRow();
+			xlsxRs.beforeFirst();
+		} catch (SQLException e) {
+		}
+		if (rowCount > DataSphereServlet.maxExportRow) rowCount = DataSphereServlet.maxExportRow;
+		if (perTime > 0 && rowCount > perTime) throw new Exception("(" + rowCount + ") rows Result Set too large!");
+		if (perDay > 0 && edr.getDayRows() + rowCount > perDay) throw new Exception("Exceed everyday's max row count");
+		if (perMonth > 0 && edr.getMonthRows() + rowCount > perMonth) throw new Exception("Exceed per month's max row count");
+		b2007 = rowCount > 63356;
+		edr.add(rowCount);
+		ui.writeExportDataRows(edr);
+		return b2007;
+	}
+	public void xlsx(HttpSession session, OutputStream fos, boolean u2007) throws Exception {
+		status = "��ʼ��ѯ���......";
+		
+		if (currPage > CACHE_NUM) {
+			maxCache = 0;
+			this.rs = doQuery();			
+		}
+		ResultSet rs = this.rs;
+
+		Object user = session.getAttribute( "datasphere_username" );
+		if (user == null) throw new Exception("need user login!");
+		UserInfo ui = DataSphereServlet.userManager.getUserInfo(user.toString());
+		Logger.debug("export max row = " + ui.getExportMaxRowsPerTime());
+		long perTime = ui.getExportMaxRowsPerTime();
+		long perDay = ui.getExportMaxRowsPerDay();
+		long perMonth = ui.getExportMaxRowsPerMonth();
+		edr = ui.getExportDataRows();
+		long max = Integer.MAX_VALUE;
+		if (perTime > 0) {
+			max = perTime;
+		}
+		if (perDay > 0) {
+			long dayLeft = perDay - edr.getDayRows();
+			if (dayLeft <= 0) throw new Exception("Exceed everyday's max row count");
+			if (max > dayLeft) max = dayLeft;
+		}
+		if (perMonth > 0) {
+			long monthLeft = perMonth - edr.getMonthRows();
+			if (monthLeft <= 0) throw new Exception("Exceed per month's max row count");
+			if (max > monthLeft) max = monthLeft;
+		}
+		if (max > DataSphereServlet.maxExportRow) max = DataSphereServlet.maxExportRow;
+		if (max > 63356 && !u2007) max = 63356;
+		int rowCount = 0;
+//		try {
+//			xlsxRs.last();
+//			rowCount = xlsxRs.getRow();
+//			xlsxRs.beforeFirst();
+//		} catch (SQLException e) {
+//		}
+//		if (rowCount > DataSphereServlet.maxExportRow) rowCount = DataSphereServlet.maxExportRow;
+//		if (perTime > 0 && rowCount > perTime) throw new Exception("(" + rowCount + ") rows Result Set too large!");
+//		if (perDay > 0 && edr.getDayRows() + rowCount > perDay) throw new Exception("Exceed everyday's max row count");
+//		if (perMonth > 0 && edr.getMonthRows() + rowCount > perMonth) throw new Exception("Exceed per month's max row count");
+
+		//63356
+		String[] header = new String[columns.size()];
+		for (int i=0; i<columns.size(); i++) {
+			header[i] = columns.get(i).toString();
+		}
+//		int count = 0;
+		boolean over = true;
+		if (u2007) {
+			ExcelXTool et = new ExcelXTool(fos);
+			et.writeLine(header);
+			for (int i=0; i<Integer.MAX_VALUE; i++) {
+				List row = getRow(i, rs);
+				if (row == null || row.size() != columns.size()) {
+					reachEnd = true;
+					break;
+				}
+				this.currPage = i / pageCount + 1;
+				if (max == 0) {
+					over = false;
+					status = "info:����Ȩ��ʹ���꣬���δ��ȫ����";
+					break;
+				}
+				if (rowCount%1000 == 0) status = "���?��" + rowCount + "�����";
+				Object[] rowObj = new Object[columns.size()];
+				for (int j=0; j<this.columns.size(); j++) {
+					FieldAttr fa = dqlfa.getFieldAttr(j+1);
+					if (fa == null) fa = new FieldAttr();
+					rowObj[j] = ConfigUtil.format(getDispValue(row.get(j), fa), fa.getFormat());
+				}
+				et.writeLine(rowObj);
+				rowCount++;
+				max--;
+			}
+			et.output();
+		} else {
+			ExcelTool et = new ExcelTool(fos);
+			et.writeLine(header);
+			for (int i=0; i<Integer.MAX_VALUE; i++) {
+				List row = getRow(i, rs);
+				if (row == null || row.size() != columns.size()) {
+					reachEnd = true;
+					break;
+				}
+				this.currPage = i / pageCount + 1;
+				if (max == 0) {
+					over = false;
+					status = "info:����Ȩ��ʹ���꣬���δ��ȫ����";
+					break;
+				}
+				if (rowCount%1000 == 0) status = "���?��" + rowCount + "�����";
+				Object[] rowObj = new Object[columns.size()];
+				for (int j=0; j<this.columns.size(); j++) {
+					FieldAttr fa = dqlfa.getFieldAttr(j+1);
+					if (fa == null) fa = new FieldAttr();
+					rowObj[j] = ConfigUtil.format(getDispValue(row.get(j), fa), fa.getFormat());
+				}
+				et.writeLine(rowObj);
+				rowCount++;
+				max--;
+			}
+			et.output();
+		}
+		edr.add(rowCount);
+		ui.writeExportDataRows(edr);
+//		Statement stat = null;
+//		try {
+//			stat = xlsxRs.getStatement();
+//		} catch (Exception e) {}
+//		Connection con = null;
+//		try {
+//			con = stat.getConnection();
+//		} catch (Exception e) {}
+//		try {
+//			xlsxRs.close();
+//		} catch (Exception e) {}
+//		try {
+//			stat.close();
+//		} catch (Exception e) {}
+//		try {
+//			con.close();
+//		} catch (Exception e) {}
+		if (over) status = "success";
+	}
+	public String esCalc() {
+		StringBuffer sb = new StringBuffer();
+		try {
+			ResultSet rs = doQuery();
+			for (int i=0; i<columns.size(); i++) {
+				if (i > 0) sb.append("\t");
+				sb.append(columns.get(i).toString());
+			}
+			sb.append("\r\n");
+			for (int i=0; i<columns.size(); i++) {
+				if (i > 0) sb.append("\t");
+				sb.append(types.get(i).toString());
+			}
+			sb.append("\r\n");
+			for (int i=0; i<columns.size(); i++) {
+				if (i > 0) sb.append("\t");
+				sb.append(editStyles.get(i).toString());
+			}
+			while (rs.next()) {
+				sb.append("\r\n");
+				for (int j=0; j<this.columns.size(); j++) {
+					if (j > 0) sb.append("\t");
+					sb.append(rs.getObject(j+1));
+				}
+			}
+			Statement stat = null;
+			try {
+				stat = rs.getStatement();
+			} catch (Exception e) {}
+			Connection con = null;
+			try {
+				con = stat.getConnection();
+			} catch (Exception e) {}
+			try {
+				rs.close();
+			} catch (Exception e) {}
+			try {
+				stat.close();
+			} catch (Exception e) {}
+			try {
+				con.close();
+			} catch (Exception e) {}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return sb.toString();
+	}
+
+	//ҳ��رա�TODO(sessionʧЧ)
+	public void closeResultSet() throws SQLException {
+		Statement stat = null;
+		try {
+			stat = rs.getStatement();
+		} catch (Exception e) {}
+		Connection con = null;
+		try {
+			con = stat.getConnection();
+		} catch (Exception e) {}
+		try {
+			rs.close();
+		} catch (Exception e) {}
+		try {
+			stat.close();
+		} catch (Exception e) {}
+		try {
+			con.close();
+		} catch (Exception e) {}
+	}
+
+	public static void main(String args[]) throws Exception {
+//		Context ctx = new Context();
+//		LogicMetaData lmd = LogicMetaData.readLogicMetaData("D:\\workspace\\datalogic\\web\\WEB-INF\\classes\\newdemo120611.xml");
+//		lmd.prepare();
+//		ctx.setLogicMetaData(lmd);
+////		ctx.setDBType(DBTypes.SQLSVR);
+//		Translator trans = new Translator("select Ա����.count(����) from Ա���� by ����", ctx);
+//
+//		Logger.debug(trans.toNativeSQL());
+
+	}
+
+	public void setPageCount(int pageCount) {
+		this.pageCount = pageCount;
+	}
+
+	public boolean isReachEnd() {
+		return reachEnd;
+	}
+
+	public int getCurrPage() {
+		return currPage;
+	}
+	
+	
+	
+	private void generateHeader(PrintWriter pw) throws Exception {
+		if (title) {
+			int count = columns.size();
+			int tw = 0;
+			for (int i=0; i<count; i++) {
+				tw += dqlfa.getFieldAttr(i+1).getWidth();
+			}
+			pw.print("<style>.resultTableClass td{border:1px solid #BFC2C6;}</style><table class='resultTableClass' style='border-collapse:collapse;font-size:12px;table-layout:fixed;width:" + tw + "px;'><tr id='titleTr'>");
+			for (int i=0; i<count; i++) {
+				FieldAttr fa = dqlfa.getFieldAttr(i+1);
+				String useDisp = "";
+				if (fa.getSql() != null && fa.getSql().length() > 0) useDisp = " useDisp=" + (fa.isUseDisp()?"1":"0");
+				pw.print("<th format='" + fa.getFormat() + "'" + useDisp + " style='border:1px solid #BFC2C6;width:" + fa.getWidth() + "px'>" + columns.get(i) + "</th>");
+			}
+			pw.print("</tr>");
+		}
+	}
+	
+	
+//	private boolean getRow(int i, PrintWriter pw, ResultSet rs) throws Exception {
+//		List row = new ArrayList();
+//		int count = columns.size();
+//		if (cache.size() > i) {
+//			row = (List)cache.get(i);
+//		} else if (cache.size() == i) {
+//			if (!rs.next()) return true;
+//			for (int k=1; k<=count; k++) {
+//				FieldAttr fa = dqlfa.getFieldAttr(k);
+//				if (fa == null) fa = new FieldAttr();
+//				String str = ConfigUtil.format(getDispValue(rs.getObject(k), fa), fa.getFormat());
+//				row.add(str);
+//			}
+//			cache.add(row);
+//		}
+//		pw.print("<tr>");
+//		for (int k=0; k<count; k++) {
+//			pw.print("<td>" + row.get(k) + "</td>");
+//		}
+//		pw.print("</tr>");
+//		return false;
+//	}
+//
+	public void prev(PrintWriter pw, String attrs) throws Exception {
+		dqlfa.mergeAttr(attrs);
+		try {
+			if (currPage == 1) {
+				pw.print("error:�Ѿ�����ǰҳ");
+				status = "error:�Ѿ�����ǰҳ";
+				return;
+			}
+			reachEnd = false;
+			currPage--;
+			if (title) generateHeader(pw); 
+			for (int i=(currPage-1) * pageCount; i<currPage * pageCount; i++) {
+				if (i%1000 == 0) status = "���?��" + i + "�����";
+				List row = getRow(i, rs);
+				if (row == null) {
+					currPage++;
+					pw.print("error:�Ѿ�����ǰҳ");
+					status = "error:�Ѿ�����ǰҳ";
+					return;
+				}
+				reachEnd = (row == null);
+				if (reachEnd) break;
+				pw.print("<tr>");
+				for (int k=1; k<=row.size(); k++) {
+					FieldAttr fa = dqlfa.getFieldAttr(k);
+					if (fa == null) fa = new FieldAttr();
+					String str = ConfigUtil.format(getDispValue(row.get(k-1), fa), fa.getFormat());
+					pw.print("<td>" + str + "</td>");
+				}
+				pw.print("</tr>");
+			}
+			if (title) pw.print("</table>");
+			pw.print("<input type='hidden' id='pageNum' value='" + currPage + "'><input type='hidden' id='reachEnd' value='" + (reachEnd?"1":"0") + "'>");
+			status = "success";
+		} catch (SQLException e) {
+			e.printStackTrace();
+			status = "error:" + e.getMessage();
+			pw.print(status);
+		}
+	}
+
+	public void refresh(PrintWriter pw, String attrs) throws Exception {
+		dqlfa.mergeAttr(attrs);
+		try {
+			if (title) generateHeader(pw); 
+			for (int i=(currPage-1) * pageCount; i<currPage * pageCount; i++) {
+				if (i%1000 == 0) status = "���?��" + i + "�����";
+				List row = getRow(i, rs);
+				reachEnd = (row == null);
+				if (reachEnd) break;
+				pw.print("<tr>");
+				for (int k=1; k<=row.size(); k++) {
+					FieldAttr fa = dqlfa.getFieldAttr(k);
+					if (fa == null) fa = new FieldAttr();
+					String str = ConfigUtil.format(getDispValue(row.get(k-1), fa), fa.getFormat());
+					pw.print("<td>" + str + "</td>");
+				}
+				pw.print("</tr>");
+			}
+			if (title) pw.print("</table>");
+			pw.print("<input type='hidden' id='pageNum' value='" + currPage + "'><input type='hidden' id='reachEnd' value='" + (reachEnd?"1":"0") + "'>");
+			status = "success";
+		} catch (SQLException e) {
+			e.printStackTrace();
+			status = "error:" + e.getMessage();
+			pw.print(status);
+		}
+	}
+	
+	public void next(PrintWriter pw, String attrs) throws Exception {
+		dqlfa.mergeAttr(attrs);
+		try {
+			//Logger.debug("----" + reachEnd);
+			if (reachEnd) {
+				pw.print("error:�Ѿ��ﵽ���ҳ");
+				status = "error:�Ѿ��ﵽ���ҳ";
+				return;
+			}
+			currPage++;
+			if (title) generateHeader(pw); 
+			for (int i=(currPage-1) * pageCount; i<currPage * pageCount; i++) {
+				if (i%1000 == 0) status = "���?��" + i + "�����";
+				List row = getRow(i, rs);
+				reachEnd = (row == null);
+				if (reachEnd) break;
+				pw.print("<tr>");
+				for (int k=1; k<=row.size(); k++) {
+					FieldAttr fa = dqlfa.getFieldAttr(k);
+					if (fa == null) fa = new FieldAttr();
+					String str = ConfigUtil.format(getDispValue(row.get(k-1), fa), fa.getFormat());
+					pw.print("<td>" + str + "</td>");
+				}
+				pw.print("</tr>");
+			}
+			if (title) pw.print("</table>"); 
+			pw.print("<input type='hidden' id='pageNum' value='" + currPage + "'><input type='hidden' id='reachEnd' value='" + (reachEnd?"1":"0") + "'>");
+			status = "success";
+		} catch (SQLException e) {
+			e.printStackTrace();
+			status = "error:" + e.getMessage();
+			pw.print(status);
+		}
+	}
+	
+}
