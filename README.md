@@ -5,7 +5,7 @@ WEB系统中，借助DQL Server这种新数据源，就能比较容易的实现�
 <br>
 润乾OLAP的WEB系统是一个开源项目，简单的演示了如果借助DQL引擎实现敏捷OLAP，改造或借鉴该开源代码，可以开发出适用于自己行业的敏捷OLAP系统。<br>
 # 如何使用
-润乾OLAP、DQL Server、Demo数据库等功能模块整体打包进了同一个安装包，可以从乾学院下载：<br>
+润乾OLAP、DQL Server、Demo数据库等功能模块整体打包进了同一个安装包，安装后就能直接运行，从乾学院下载：<br>
 <a href="http://c.raqsoft.com.cn/tag/Download">下载润乾报表</a><br>
 <br>
 润乾OLAP的WEB系统根路径是{润乾报表安装目录}\report\web\webapps\demo\；<br>
