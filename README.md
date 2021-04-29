@@ -4,18 +4,18 @@
 
 这种自动的关联能力来自一种新的查询语言DQL，并非直接使用数据库直接支持的SQL，看上面这个分析的DQL语句：<br>
 SELECT <br>
-&nbsp;&nbsp;姓名 AS 员工姓名<br>
-&nbsp;&nbsp;,部门.部门经理.姓名 AS 经理姓名<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;姓名 AS 员工姓名<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;,部门.部门经理.姓名 AS 经理姓名<br>
 FROM 员工表<br>
 <br>
 以及相对应的SQL语句：<br>
 SELECT<br>
-&nbsp;&nbsp;T1.姓名 AS 员工姓名<br>
-&nbsp;&nbsp;T3.姓名 AS 经理姓名<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;T1.姓名 AS 员工姓名<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;,T3.姓名 AS 经理姓名<br>
 FROM<br>
-&nbsp;&nbsp;员工表 T1<br> 
-&nbsp;&nbsp;LEFT JOIN 部门表 T2 ON T1.部门=T2.部门ID<br>
-&nbsp;&nbsp;LEFT JOIN 员工表 T3 ON T2.部门经理=T3.员工ID<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;员工表 T1<br> 
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;LEFT JOIN 部门表 T2 ON T1.部门=T2.部门ID<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;LEFT JOIN 员工表 T3 ON T2.部门经理=T3.员工ID<br>
 <br>	
 润乾OLAP按照分析界面操作，容易拼出来相应的DQL语句，但DQL语句无法直接去数据库查获数据。这时需要一个独立的DQL引擎服务器，提供查询服务，它负责DQL转换SQL，并从封装起来的底层数据库查得数据。在整个系统的架构图中，DQL服务器就等价于常规的数据库服务器，只是它的查询语言是换成了能做自动关联的DQL。<br>
 <br>
