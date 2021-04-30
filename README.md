@@ -2,13 +2,13 @@
 常规OLAP需要根据业务分析需求预先把相关表关联起来，制作成用于OLAP需要的CUBE，而润乾OLAP是一种不用频繁制作CUBE的敏捷OLAP，仅需要对整个数据库关联的表做一次元数据预定义。就能针对整库的所有查询分析自动关联，比如下面的分析，经理姓名来自【员工表】的【部门】的【部门经理】的【姓名】，不会感觉到表关联，但实际获得的数据，是通过对员工表、部门表进行了互相关联查得：<br>
 <img src="http://img.raqsoft.com.cn/docx/1614069868548100.png"/><br>
 
-这种自动的关联能力来自一种新的查询语言DQL，并非直接使用数据库支持的SQL，看上面这个分析的DQL语句：<br><br>
+表自动关联能力来自一种新的查询语言DQL，并非直接使用数据库支持的SQL，看上面这个界面分析拼成的DQL语句：<br><br>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SELECT <br>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;姓名 AS 员工姓名<br>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;,部门.部门经理.姓名 AS 经理姓名<br>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;FROM 员工表<br>
 <br>
-以及相对应的SQL语句：<br><br>
+以及相同查询结果对应的SQL语句：<br><br>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SELECT<br>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;T1.姓名 AS 员工姓名<br>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;,T3.姓名 AS 经理姓名<br>
